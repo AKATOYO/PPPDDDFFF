@@ -1,23 +1,63 @@
 body {
-    font-family: Arial, sans-serif;
-    padding: 20px;
+  font-family: 'Arial', sans-serif;
+  margin: 20px;
+  background-color: #f0f2f5;
+  color: #333;
 }
 
-#pdf-preview {
-    margin-top: 20px;
-    max-height: 400px;
-    overflow: auto;
-    border: 1px solid #ccc;
-    padding: 10px;
+h1 {
+  text-align: center;
+  color: #2c3e50;
+}
+
+#file-input {
+  display: block;
+  margin: 10px auto;
 }
 
 button {
-    margin: 10px 5px;
-    padding: 10px 20px;
-    font-size: 16px;
+  margin: 10px 5px;
+  padding: 10px 20px;
+  border: none;
+  background-color: #3498db;
+  color: #fff;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 16px;
+  transition: background-color 0.3s;
+}
+
+button:hover:enabled {
+  background-color: #2980b9;
+}
+
+button:disabled {
+  background-color: #bdc3c7;
+  cursor: not-allowed;
+}
+
+#thumbnails {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 15px;
+}
+
+#thumbnails canvas {
+  border: 1px solid #ccc;
+  margin: 5px;
+  width: 80px;
+  height: auto;
+}
+
+#progress {
+  margin: 15px 0;
+  font-weight: bold;
+  text-align: center;
 }
 
 #status {
-    margin-top: 10px;
-    font-weight: bold;
+  margin-top: 15px;
+  min-height: 20px;
+  text-align: center;
 }
