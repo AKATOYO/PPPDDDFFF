@@ -1,20 +1,37 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>OCR en PDF</title>
-    <link rel="stylesheet" href="styles.css" />
+  <meta charset="UTF-8" />
+  <title>OCR en PDF Mejorado</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-    <h1>Aplicar OCR a PDF</h1>
-    <input type="file" id="file-input" accept="application/pdf" />
-    <div id="pdf-preview"></div>
-    <button id="apply-ocr">APLICAR OCR</button>
-    <button id="download" disabled>DESCARGAR ARCHIVO OCR</button>
-    <div id="status"></div>
-
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2/dist/tesseract.min.js"></script>
-    <script src="script.js"></script>
+  <h1>Aplicar OCR a un archivo PDF</h1>
+  
+  <!-- Selección de archivo -->
+  <input type="file" id="file-input" accept="application/pdf" />
+  
+  <!-- Botón para limpiar -->
+  <button id="btn-clear" disabled>Limpiar</button>
+  
+  <!-- Previsualización de miniaturas -->
+  <div id="thumbnails"></div>
+  
+  <!-- Botón para aplicar OCR -->
+  <button id="btn-ocr" disabled>Aplicar OCR</button>
+  
+  <!-- Progreso de OCR -->
+  <div id="progress"></div>
+  
+  <!-- Botón para descargar archivo -->
+  <button id="download-btn" disabled>Descargar Texto OCR</button>
+  
+  <!-- Estado -->
+  <div id="status"></div>
+  
+  <!-- Incluyendo librerías CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2/dist/tesseract.min.js"></script>
+  <script src="https://mozilla.github.io/pdf.js/build/pdf.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
