@@ -23,12 +23,13 @@
 <div id="loading"></div>
 <div id="resultado"></div>
 
-<!-- Incluye las librerías -->
-<script src="https://mozilla.github.io/pdf.js/build/pdf.js"></script>
+<!-- Updated to use a specific modern version of PDF.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2/dist/tesseract.min.js"></script>
 <script>
+  // Updated reference for modern PDF.js versions
   const pdfjsLib = window['pdfjs-dist/build/pdf'];
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://mozilla.github.io/pdf.js/build/pdf.worker.js';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 document.getElementById('procesar').addEventListener('click', () => {
   const fileInput = document.getElementById('pdf-upload');
@@ -56,42 +57,47 @@ async function processPDF(data) {
   const loadingDiv = document.getElementById('loading');
   const resultadoDiv = document.getElementById('resultado');
 
-  const pdf = await pdfjsLib.getDocument({ data }).promise;
-  const numPages = pdf.numPages;
-  const resultados = [];
+  try {
+    const pdf = await pdfjsLib.getDocument({ data }).promise;
+    const numPages = pdf.numPages;
+    const resultados = [];
 
-  for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    // Renderizar página en canvas
-    const viewport = page.getViewport({ scale: 1.5 });
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      loadingDiv.innerHTML = `Procesando página ${pageNum} de ${numPages}...`;
+      
+      const page = await pdf.getPage(pageNum);
+      // Renderizar página en canvas
+      const viewport = page.getViewport({ scale: 1.5 });
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
 
-    await page.render({ canvasContext: context, viewport: viewport }).promise;
+      await page.render({ canvasContext: context, viewport: viewport }).promise;
 
-    // Convertir canvas a imagen
-    const dataURL = canvas.toDataURL('image/png');
+      // Pass the canvas directly to Tesseract instead of converting to Data URL
+      const texto = await recognizeText(canvas);
 
-    // Realizar OCR
-    const texto = await recognizeText(dataURL);
+      resultados.push({ pagina: pageNum, texto: texto });
+    }
 
-    resultados.push({ pagina: pageNum, texto: texto });
+    mostrarResultados(resultados);
+  } catch (error) {
+    console.error("Error procesando el PDF:", error);
+    resultadoDiv.innerHTML = '<p>Ocurrió un error al procesar el PDF.</p>';
+  } finally {
+    loadingDiv.innerHTML = '';
   }
-
-  mostrarResultados(resultados);
-  document.getElementById('loading').innerHTML = '';
 }
 
-async function recognizeText(imageDataUrl) {
+async function recognizeText(imageSource) {
+  // Tesseract.js can accept a Canvas element directly, which is much faster
   const result = await Tesseract.recognize(
-    imageDataUrl,
+    imageSource,
     'spa',
     {
       logger: m => {
-        // Puedes agregar un log opcional
-        //console.log(m);
+        // Optional logging
       }
     }
   );
@@ -125,9 +131,11 @@ function mostrarResultados(datos) {
     const tdPage = document.createElement('td');
     tdPage.textContent = dato.pagina;
     const tdTexto = document.createElement('td');
-    // Limitar la longitud del texto para mejor visualización
-    const textoCorto = dato.texto.length > 200 ? dato.texto.substring(0, 200) + '...' : dato.texto;
-    tdTexto.textContent = textoCorto;
+    
+    // Use 'white-space: pre-wrap' to preserve line breaks from OCR, and removed the 200 character truncation
+    tdTexto.style.whiteSpace = "pre-wrap"; 
+    tdTexto.textContent = dato.texto;
+    
     tr.appendChild(tdPage);
     tr.appendChild(tdTexto);
     tbody.appendChild(tr);
