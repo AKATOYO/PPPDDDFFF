@@ -3,145 +3,252 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Extractor de Información del PDF</title>
+<title>Organizador Automático de Productos</title>
 <style>
   body { font-family: Arial, sans-serif; margin: 20px; }
   #pdf-upload { margin-bottom: 10px; }
-  #procesar { padding: 8px 16px; margin-bottom: 20px; }
-  #resultado { margin-top: 20px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-  th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-  th { background-color: #f4f4f4; }
-  #loading { margin-top: 10px; }
+  #procesar { padding: 8px 16px; margin-bottom: 20px; cursor: pointer; }
+  #resultado { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 20px; }
+  .producto-card { border: 1px solid #ccc; border-radius: 8px; padding: 15px; width: 300px; background-color: #fafafa; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
+  .producto-card table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  .producto-card th, .producto-card td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 14px; }
+  .producto-card th { background-color: #f4f4f4; width: 30%; }
+  .producto-card img { max-width: 100%; height: auto; border-radius: 4px; margin-top: 5px; }
+  #loading { margin-top: 10px; font-weight: bold; color: #0056b3; }
 </style>
 </head>
 <body>
 
-<h1>Extractor de Información del PDF</h1>
+<h1>Organizador Automático de Productos</h1>
 <input type="file" id="pdf-upload" accept="application/pdf" />
 <button id="procesar">Procesar PDF</button>
 <div id="loading"></div>
 <div id="resultado"></div>
 
-<!-- Updated to use a specific modern version of PDF.js -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@2/dist/tesseract.min.js"></script>
-<script>
-  // Updated reference for modern PDF.js versions
-  const pdfjsLib = window['pdfjs-dist/build/pdf'];
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+<!-- Librerías -->
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.4.120/build/pdf.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
 
-document.getElementById('procesar').addEventListener('click', () => {
-  const fileInput = document.getElementById('pdf-upload');
-  const file = fileInput.files[0];
+<script>
+const pdfjsLib = window['pdfjs-dist/build/pdf'];
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.4.120/build/pdf.worker.js';
+
+document.getElementById('procesar').addEventListener('click', function() {
+  const file = document.getElementById('pdf-upload').files[0];
   const loadingDiv = document.getElementById('loading');
   const resultadoDiv = document.getElementById('resultado');
-
   resultadoDiv.innerHTML = '';
+
   if (!file || file.type !== 'application/pdf') {
     alert('Por favor, carga un archivo PDF válido.');
     return;
   }
 
-  loadingDiv.innerHTML = 'Procesando PDF, por favor espera...';
+  loadingDiv.innerHTML = 'Procesando PDF, esto puede tardar...';
 
-  const reader = new FileReader();
+  var reader = new FileReader();
   reader.onload = function(e) {
-    const typedarray = new Uint8Array(e.target.result);
+    var typedarray = new Uint8Array(e.target.result);
     processPDF(typedarray);
   };
   reader.readAsArrayBuffer(file);
 });
 
-async function processPDF(data) {
-  const loadingDiv = document.getElementById('loading');
-  const resultadoDiv = document.getElementById('resultado');
+function processPDF(data) {
+  pdfjsLib.getDocument({ data: data }).promise.then(function(pdf) {
+    var numPages = pdf.numPages;
+    var productos = [];
+    var pagePromises = [];
 
-  try {
-    const pdf = await pdfjsLib.getDocument({ data }).promise;
-    const numPages = pdf.numPages;
-    const resultados = [];
+    for (var pageNum = 1; pageNum <= numPages; pageNum++) {
+      (function(pageNumber) {
+        pagePromises.push(
+          pdf.getPage(pageNumber).then(function(page) {
+            // 1. Extraer imágenes primero (evita hacer OCR innecesario si no hay imágenes)
+            return extractImagesFromPage(page).then(function(imgs) {
+              if (imgs.length === 0) return; // Si no hay imágenes en la página, omitimos el OCR
 
-    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-      loadingDiv.innerHTML = `Procesando página ${pageNum} de ${numPages}...`;
-      
-      const page = await pdf.getPage(pageNum);
-      // Renderizar página en canvas
-      const viewport = page.getViewport({ scale: 1.5 });
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
+              // 2. Renderizar la página para OCR
+              var scale = 2.0;
+              var viewport = page.getViewport({ scale: scale });
+              var canvas = document.createElement('canvas');
+              var ctx = canvas.getContext('2d');
+              canvas.width = viewport.width;
+              canvas.height = viewport.height;
 
-      await page.render({ canvasContext: context, viewport: viewport }).promise;
-
-      // Pass the canvas directly to Tesseract instead of converting to Data URL
-      const texto = await recognizeText(canvas);
-
-      resultados.push({ pagina: pageNum, texto: texto });
+              return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function() {
+                var imageDataUrl = canvas.toDataURL('image/png');
+                
+                // 3. Reconocer texto
+                return recognizeText(imageDataUrl).then(function(textoOCR) {
+                  var referencias = detectarReferencias(textoOCR);
+                  
+                  referencias.forEach(function(ref, index) {
+                    // Asignar la imagen correspondiente (si hay varias productos, se reparten las imágenes)
+                    var img = imgs.length > 0 ? imgs[index % imgs.length] : null;
+                    var desc = extraerDescripcion(ref, textoOCR);
+                    productos.push({ referencia: ref, descripcion: desc, imagen: img });
+                  });
+                });
+              });
+            });
+          })
+        );
+      })(pageNum);
     }
 
-    mostrarResultados(resultados);
-  } catch (error) {
-    console.error("Error procesando el PDF:", error);
-    resultadoDiv.innerHTML = '<p>Ocurrió un error al procesar el PDF.</p>';
-  } finally {
-    loadingDiv.innerHTML = '';
-  }
+    Promise.all(pagePromises).then(function() {
+      mostrarResultados(productos);
+      document.getElementById('loading').innerHTML = '';
+    }).catch(function(error) {
+      console.error('Error procesando el PDF:', error);
+      document.getElementById('loading').innerHTML = 'Ocurrió un error al procesar el PDF.';
+    });
+  });
 }
 
-async function recognizeText(imageSource) {
-  // Tesseract.js can accept a Canvas element directly, which is much faster
-  const result = await Tesseract.recognize(
-    imageSource,
-    'spa',
-    {
-      logger: m => {
-        // Optional logging
+function detectarReferencias(texto) {
+  var regex = /[A-Z0-9]{3,}-?\d{2,}/g;
+  var match;
+  var refs = [];
+  while ((match = regex.exec(texto)) !== null) {
+    refs.push(match[0]);
+  }
+  return [...new Set(refs)];
+}
+
+function extraerDescripcion(ref, texto) {
+  var lineas = texto.split('\n');
+  for (var i = 0; i < lineas.length; i++) {
+    if (lineas[i].includes(ref)) {
+      return lineas[i].replace(ref, '').trim();
+    }
+  }
+  return 'Descripción no encontrada';
+}
+
+// Función de extracción de imágenes reparada
+function extractImagesFromPage(page) {
+  return page.getOperatorList().then(function(opList) {
+    var imgs = [];
+    var fnArray = opList.fnArray;
+    var argsArray = opList.argsArray;
+    var imagePromises = [];
+
+    for (var i = 0; i < fnArray.length; i++) {
+      if (fnArray[i] === pdfjsLib.OPS.paintImageXObject || fnArray[i] === pdfjsLib.OPS.paintImageXObjectRepeat) {
+        (function(index) {
+          var args = argsArray[index];
+          var imageName = args[0];
+          
+          // Usar commonObjs.get que es la forma establecida en PDF.js 3.x para obtener el objeto
+          var imgPromise = new Promise(function(resolve) {
+            page.commonObjs.get(imageName, function(imgObj) {
+              try {
+                var c = document.createElement('canvas');
+                c.width = imgObj.width;
+                c.height = imgObj.height;
+                var ctx = c.getContext('2d');
+                
+                // PDF.js devuelve la data en formato Uint8ClampedArray para RGBA
+                var imgData = new ImageData(new Uint8ClampedArray(imgObj.data), imgObj.width, imgObj.height);
+                ctx.putImageData(imgData, 0, 0);
+                
+                var dataUrl = c.toDataURL('image/png');
+                imgs.push(dataUrl);
+              } catch(e) {
+                console.error('Error procesando la imagen extraída:', e);
+              }
+              resolve();
+            });
+          });
+          imagePromises.push(imgPromise);
+        })(i);
       }
     }
-  );
-  return result.data.text;
+    
+    return Promise.all(imagePromises).then(function() {
+      return imgs;
+    });
+  });
 }
 
-function mostrarResultados(datos) {
-  const container = document.getElementById('resultado');
+function recognizeText(imageDataUrl) {
+  return Tesseract.recognize(imageDataUrl, 'spa', { 
+    logger: m => {
+      if (m.status === 'recognizing text') {
+        document.getElementById('loading').innerHTML = `Procesando OCR... ${Math.round(m.progress * 100)}%`;
+      }
+    }
+  }).then(function(result) {
+    return result.data.text;
+  });
+}
+
+// Modificado para generar tablas individuales por producto
+function mostrarResultados(productos) {
+  var container = document.getElementById('resultado');
   container.innerHTML = '';
 
-  if (datos.length === 0) {
-    container.innerHTML = '<p>No se encontraron páginas o no se pudo extraer texto.</p>';
+  if (productos.length === 0) {
+    container.innerHTML = '<p>No se encontraron productos con imágenes en el PDF.</p>';
     return;
   }
 
-  // Crear tabla
-  const table = document.createElement('table');
-  const thead = document.createElement('thead');
-  const trHead = document.createElement('tr');
-  ['Página', 'Texto Extraído'].forEach(texto => {
-    const th = document.createElement('th');
-    th.textContent = texto;
-    trHead.appendChild(th);
-  });
-  thead.appendChild(trHead);
-  table.appendChild(thead);
+  productos.forEach(function(p, index) {
+    // Crear tarjeta contenedora para cada producto
+    var card = document.createElement('div');
+    card.className = 'producto-card';
 
-  const tbody = document.createElement('tbody');
-  datos.forEach(dato => {
-    const tr = document.createElement('tr');
-    const tdPage = document.createElement('td');
-    tdPage.textContent = dato.pagina;
-    const tdTexto = document.createElement('td');
-    
-    // Use 'white-space: pre-wrap' to preserve line breaks from OCR, and removed the 200 character truncation
-    tdTexto.style.whiteSpace = "pre-wrap"; 
-    tdTexto.textContent = dato.texto;
-    
-    tr.appendChild(tdPage);
-    tr.appendChild(tdTexto);
-    tbody.appendChild(tr);
+    // Título del producto
+    var title = document.createElement('h3');
+    title.innerText = 'Producto ' + (index + 1);
+    card.appendChild(title);
+
+    // Crear tabla individual
+    var table = document.createElement('table');
+    var tbody = document.createElement('tbody');
+
+    // Fila Referencia
+    var trRef = document.createElement('tr');
+    var thRef = document.createElement('th');
+    thRef.innerText = 'Referencia';
+    var tdRef = document.createElement('td');
+    tdRef.innerText = p.referencia;
+    trRef.appendChild(thRef);
+    trRef.appendChild(tdRef);
+    tbody.appendChild(trRef);
+
+    // Fila Descripción
+    var trDesc = document.createElement('tr');
+    var thDesc = document.createElement('th');
+    thDesc.innerText = 'Descripción';
+    var tdDesc = document.createElement('td');
+    tdDesc.innerText = p.descripcion;
+    trDesc.appendChild(thDesc);
+    trDesc.appendChild(tdDesc);
+    tbody.appendChild(trDesc);
+
+    // Fila Imagen
+    var trImg = document.createElement('tr');
+    var thImg = document.createElement('th');
+    thImg.innerText = 'Imagen';
+    var tdImg = document.createElement('td');
+    if (p.imagen) {
+      var img = document.createElement('img');
+      img.src = p.imagen;
+      tdImg.appendChild(img);
+    } else {
+      tdImg.innerText = 'No hay imagen';
+    }
+    trImg.appendChild(thImg);
+    trImg.appendChild(tdImg);
+    tbody.appendChild(trImg);
+
+    table.appendChild(tbody);
+    card.appendChild(table);
+    container.appendChild(card);
   });
-  table.appendChild(tbody);
-  container.appendChild(table);
 }
 </script>
 
