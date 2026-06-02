@@ -1,255 +1,299 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Organizador Automático de Productos</title>
-<style>
-  body { font-family: Arial, sans-serif; margin: 20px; }
-  #pdf-upload { margin-bottom: 10px; }
-  #procesar { padding: 8px 16px; margin-bottom: 20px; cursor: pointer; }
-  #resultado { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 20px; }
-  .producto-card { border: 1px solid #ccc; border-radius: 8px; padding: 15px; width: 300px; background-color: #fafafa; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
-  .producto-card table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-  .producto-card th, .producto-card td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 14px; }
-  .producto-card th { background-color: #f4f4f4; width: 30%; }
-  .producto-card img { max-width: 100%; height: auto; border-radius: 4px; margin-top: 5px; }
-  #loading { margin-top: 10px; font-weight: bold; color: #0056b3; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCR & Geolocation Extractor</title>
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <!-- Tesseract.js -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <!-- SweetAlert2 for nice loading alerts -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <style>
+        :root {
+            --primary: #2563eb;
+            --bg: #f8fafc;
+            --border: #e2e8f0;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 { color: #1e293b; }
+        .container {
+            width: 100%;
+            max-width: 1000px;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        }
+        .upload-section {
+            border: 2px dashed var(--border);
+            padding: 40px;
+            text-align: center;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        .upload-section:hover { border-color: var(--primary); background: #f1f5f9; }
+        input[type="file"] { display: none; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 12px;
+            text-align: left;
+        }
+        th { background-color: #f1f5f9; color: #334155; }
+        tr:hover { background-color: #f8fafc; }
+        .btn-download {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 15px;
+        }
+        .btn-download:hover { background-color: #1d4ed8; }
+        .badge {
+            background: #dbeafe;
+            color: #1e40af;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+    </style>
 </head>
 <body>
 
-<h1>Organizador Automático de Productos</h1>
-<input type="file" id="pdf-upload" accept="application/pdf" />
-<button id="procesar">Procesar PDF</button>
-<div id="loading"></div>
-<div id="resultado"></div>
+<div class="container">
+    <h1>📄 OCR & Geolocation Extractor</h1>
+    <p>Upload PDF or Images. The system will extract text, identify the format (IMAGE / REF / TXT), and map their X,Y coordinates.</p>
 
-<!-- Librerías -->
-<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.4.120/build/pdf.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
+    <div class="upload-section" onclick="document.getElementById('fileInput').click()">
+        <h3>Drag & Drop or Click to Upload</h3>
+        <p>Supports: PDF, PNG, JPG, JPEG</p>
+        <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg" multiple>
+    </div>
+
+    <div id="statusMessage" style="text-align: center; color: #475569; margin: 10px 0;"></div>
+
+    <button class="btn-download" id="downloadBtn" style="display: none;" onclick="downloadCSV()">⬇ Download CSV (Image, Ref, Txt)</button>
+
+    <table id="resultTable" style="display: none;">
+        <thead>
+            <tr>
+                <th>Page / Source</th>
+                <th>IMAGEN (Top)</th>
+                <th>X, Y (Image)</th>
+                <th>REF (Middle)</th>
+                <th>X, Y (Ref)</th>
+                <th>TXT (Bottom)</th>
+                <th>X, Y (Txt)</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody">
+        </tbody>
+    </table>
+</div>
 
 <script>
-const pdfjsLib = window['pdfjs-dist/build/pdf'];
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.4.120/build/pdf.worker.js';
+    // Configure PDF.js worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
-document.getElementById('procesar').addEventListener('click', function() {
-  const file = document.getElementById('pdf-upload').files[0];
-  const loadingDiv = document.getElementById('loading');
-  const resultadoDiv = document.getElementById('resultado');
-  resultadoDiv.innerHTML = '';
-
-  if (!file || file.type !== 'application/pdf') {
-    alert('Por favor, carga un archivo PDF válido.');
-    return;
-  }
-
-  loadingDiv.innerHTML = 'Procesando PDF, esto puede tardar...';
-
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    var typedarray = new Uint8Array(e.target.result);
-    processPDF(typedarray);
-  };
-  reader.readAsArrayBuffer(file);
-});
-
-function processPDF(data) {
-  pdfjsLib.getDocument({ data: data }).promise.then(function(pdf) {
-    var numPages = pdf.numPages;
-    var productos = [];
-    var pagePromises = [];
-
-    for (var pageNum = 1; pageNum <= numPages; pageNum++) {
-      (function(pageNumber) {
-        pagePromises.push(
-          pdf.getPage(pageNumber).then(function(page) {
-            // 1. Extraer imágenes primero (evita hacer OCR innecesario si no hay imágenes)
-            return extractImagesFromPage(page).then(function(imgs) {
-              if (imgs.length === 0) return; // Si no hay imágenes en la página, omitimos el OCR
-
-              // 2. Renderizar la página para OCR
-              var scale = 2.0;
-              var viewport = page.getViewport({ scale: scale });
-              var canvas = document.createElement('canvas');
-              var ctx = canvas.getContext('2d');
-              canvas.width = viewport.width;
-              canvas.height = viewport.height;
-
-              return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function() {
-                var imageDataUrl = canvas.toDataURL('image/png');
-                
-                // 3. Reconocer texto
-                return recognizeText(imageDataUrl).then(function(textoOCR) {
-                  var referencias = detectarReferencias(textoOCR);
-                  
-                  referencias.forEach(function(ref, index) {
-                    // Asignar la imagen correspondiente (si hay varias productos, se reparten las imágenes)
-                    var img = imgs.length > 0 ? imgs[index % imgs.length] : null;
-                    var desc = extraerDescripcion(ref, textoOCR);
-                    productos.push({ referencia: ref, descripcion: desc, imagen: img });
-                  });
-                });
-              });
-            });
-          })
-        );
-      })(pageNum);
-    }
-
-    Promise.all(pagePromises).then(function() {
-      mostrarResultados(productos);
-      document.getElementById('loading').innerHTML = '';
-    }).catch(function(error) {
-      console.error('Error procesando el PDF:', error);
-      document.getElementById('loading').innerHTML = 'Ocurrió un error al procesar el PDF.';
-    });
-  });
-}
-
-function detectarReferencias(texto) {
-  var regex = /[A-Z0-9]{3,}-?\d{2,}/g;
-  var match;
-  var refs = [];
-  while ((match = regex.exec(texto)) !== null) {
-    refs.push(match[0]);
-  }
-  return [...new Set(refs)];
-}
-
-function extraerDescripcion(ref, texto) {
-  var lineas = texto.split('\n');
-  for (var i = 0; i < lineas.length; i++) {
-    if (lineas[i].includes(ref)) {
-      return lineas[i].replace(ref, '').trim();
-    }
-  }
-  return 'Descripción no encontrada';
-}
-
-// Función de extracción de imágenes reparada
-function extractImagesFromPage(page) {
-  return page.getOperatorList().then(function(opList) {
-    var imgs = [];
-    var fnArray = opList.fnArray;
-    var argsArray = opList.argsArray;
-    var imagePromises = [];
-
-    for (var i = 0; i < fnArray.length; i++) {
-      if (fnArray[i] === pdfjsLib.OPS.paintImageXObject || fnArray[i] === pdfjsLib.OPS.paintImageXObjectRepeat) {
-        (function(index) {
-          var args = argsArray[index];
-          var imageName = args[0];
-          
-          // Usar commonObjs.get que es la forma establecida en PDF.js 3.x para obtener el objeto
-          var imgPromise = new Promise(function(resolve) {
-            page.commonObjs.get(imageName, function(imgObj) {
-              try {
-                var c = document.createElement('canvas');
-                c.width = imgObj.width;
-                c.height = imgObj.height;
-                var ctx = c.getContext('2d');
-                
-                // PDF.js devuelve la data en formato Uint8ClampedArray para RGBA
-                var imgData = new ImageData(new Uint8ClampedArray(imgObj.data), imgObj.width, imgObj.height);
-                ctx.putImageData(imgData, 0, 0);
-                
-                var dataUrl = c.toDataURL('image/png');
-                imgs.push(dataUrl);
-              } catch(e) {
-                console.error('Error procesando la imagen extraída:', e);
-              }
-              resolve();
-            });
-          });
-          imagePromises.push(imgPromise);
-        })(i);
-      }
-    }
+    const fileInput = document.getElementById('fileInput');
+    const tableBody = document.getElementById('tableBody');
+    const resultTable = document.getElementById('resultTable');
+    const downloadBtn = document.getElementById('downloadBtn');
     
-    return Promise.all(imagePromises).then(function() {
-      return imgs;
+    let extractedData = [];
+
+    fileInput.addEventListener('change', async (e) => {
+        const files = e.target.files;
+        if (files.length === 0) return;
+
+        extractedData = [];
+        tableBody.innerHTML = '';
+        
+        const { value: progress } = await Swal.fire({
+            title: 'Processing Document',
+            html: 'Initializing OCR Engine...<br><small>This may take a moment depending on the file size.</small>',
+            allowOutsideClick: false,
+            showConfirmButton: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        try {
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                if (file.type === 'application/pdf') {
+                    await processPDF(file);
+                } else {
+                    await processImage(file, "Img-1");
+                }
+            }
+
+            resultTable.style.display = 'table';
+            downloadBtn.style.display = 'inline-block';
+            Swal.fire('Success!', 'Data extracted and formatted successfully.', 'success');
+        } catch (error) {
+            console.error(error);
+            Swal.fire('Error', 'Something went wrong during processing.', 'error');
+        }
     });
-  });
-}
 
-function recognizeText(imageDataUrl) {
-  return Tesseract.recognize(imageDataUrl, 'spa', { 
-    logger: m => {
-      if (m.status === 'recognizing text') {
-        document.getElementById('loading').innerHTML = `Procesando OCR... ${Math.round(m.progress * 100)}%`;
-      }
+    // Convert File to Base64/Data URL
+    function readFileAsDataURL(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
     }
-  }).then(function(result) {
-    return result.data.text;
-  });
-}
 
-// Modificado para generar tablas individuales por producto
-function mostrarResultados(productos) {
-  var container = document.getElementById('resultado');
-  container.innerHTML = '';
+    // Process PDF: Render pages to images, then OCR
+    async function processPDF(file) {
+        const dataUrl = await readFileAsDataURL(file);
+        const pdf = await pdfjsLib.getDocument(dataUrl).promise;
 
-  if (productos.length === 0) {
-    container.innerHTML = '<p>No se encontraron productos con imágenes en el PDF.</p>';
-    return;
-  }
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale: 1.5 }); // Scale for better OCR accuracy
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
 
-  productos.forEach(function(p, index) {
-    // Crear tarjeta contenedora para cada producto
-    var card = document.createElement('div');
-    card.className = 'producto-card';
-
-    // Título del producto
-    var title = document.createElement('h3');
-    title.innerText = 'Producto ' + (index + 1);
-    card.appendChild(title);
-
-    // Crear tabla individual
-    var table = document.createElement('table');
-    var tbody = document.createElement('tbody');
-
-    // Fila Referencia
-    var trRef = document.createElement('tr');
-    var thRef = document.createElement('th');
-    thRef.innerText = 'Referencia';
-    var tdRef = document.createElement('td');
-    tdRef.innerText = p.referencia;
-    trRef.appendChild(thRef);
-    trRef.appendChild(tdRef);
-    tbody.appendChild(trRef);
-
-    // Fila Descripción
-    var trDesc = document.createElement('tr');
-    var thDesc = document.createElement('th');
-    thDesc.innerText = 'Descripción';
-    var tdDesc = document.createElement('td');
-    tdDesc.innerText = p.descripcion;
-    trDesc.appendChild(thDesc);
-    trDesc.appendChild(tdDesc);
-    tbody.appendChild(trDesc);
-
-    // Fila Imagen
-    var trImg = document.createElement('tr');
-    var thImg = document.createElement('th');
-    thImg.innerText = 'Imagen';
-    var tdImg = document.createElement('td');
-    if (p.imagen) {
-      var img = document.createElement('img');
-      img.src = p.imagen;
-      tdImg.appendChild(img);
-    } else {
-      tdImg.innerText = 'No hay imagen';
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+            const imgDataUrl = canvas.toDataURL('image/png');
+            
+            await processImage(imgDataUrl, `PDF-Page-${i}`);
+        }
     }
-    trImg.appendChild(thImg);
-    trImg.appendChild(tdImg);
-    tbody.appendChild(trImg);
 
-    table.appendChild(tbody);
-    card.appendChild(table);
-    container.appendChild(card);
-  });
-}
+    // Process Image with Tesseract OCR
+    async function processImage(source, sourceName) {
+        const isUrl = typeof source === 'string' && source.startsWith('data:');
+        
+        const worker = await Tesseract.createWorker('eng+spa'); // Add languages as needed e.g., eng+spa
+        const { data } = await worker.recognize(isUrl ? source : source);
+        await worker.terminate();
+
+        if (data && data.words) {
+            parseAndFormatData(data.words, sourceName);
+        }
+    }
+
+    // Parse OCR Words to find the format: IMAGE (top), REF (middle), TXT (bottom)
+    function parseAndFormatData(words, sourceName) {
+        // Sort words by Y (top) then X (left) to simulate reading order
+        const sortedWords = words.sort((a, b) => a.bbox.y0 - b.bbox.y0 || a.bbox.x0 - b.bbox.x0);
+
+        for (let i = 0; i < sortedWords.length; i++) {
+            const currentWord = sortedWords[i].text.toUpperCase();
+            
+            // Look for the keyword "REF"
+            if (currentWord.includes("REF")) {
+                const refWord = sortedWords[i];
+                const refY = refWord.bbox.y0;
+                const refX = refWord.bbox.x0;
+
+                let imageWord = null;
+                let txtWord = null;
+
+                // Search for IMAGE (Above REF) - Lower Y value, similar X
+                for (let j = 0; j < sortedWords.length; j++) {
+                    if (i === j) continue;
+                    const word = sortedWords[j];
+                    // If it's above (word Y < ref Y) and roughly aligned vertically (X overlap)
+                    if (word.bbox.y0 < refY && Math.abs(word.bbox.x0 - refX) < 100) {
+                        if (!imageWord || word.bbox.y0 > imageWord.bbox.y0) { // Closest word above
+                            imageWord = word;
+                        }
+                    }
+                }
+
+                // Search for TXT (Below REF) - Higher Y value, similar X
+                for (let k = 0; k < sortedWords.length; k++) {
+                    if (i === k) continue;
+                    const word = sortedWords[k];
+                    // If it's below (word Y > ref Y) and roughly aligned vertically
+                    if (word.bbox.y0 > refY && Math.abs(word.bbox.x0 - refX) < 100) {
+                        if (!txtWord || word.bbox.y0 < txtWord.bbox.y0) { // Closest word below
+                            txtWord = word;
+                        }
+                    }
+                }
+
+                // If we found the structure, push to data
+                if (imageWord || txtWord) {
+                    const formatData = {
+                        source: sourceName,
+                        image: imageWord ? imageWord.text : "N/A",
+                        image_xy: imageWord ? `X:${Math.round(imageWord.bbox.x0)}, Y:${Math.round(imageWord.bbox.y0)}` : "N/A",
+                        ref: refWord.text,
+                        ref_xy: `X:${Math.round(refWord.bbox.x0)}, Y:${Math.round(refWord.bbox.y0)}`,
+                        txt: txtWord ? txtWord.text : "N/A",
+                        txt_xy: txtWord ? `X:${Math.round(txtWord.bbox.x0)}, Y:${Math.round(txtWord.bbox.y0)}` : "N/A"
+                    };
+
+                    extractedData.push(formatData);
+                    appendToTable(formatData);
+                }
+            }
+        }
+    }
+
+    function appendToTable(data) {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><span class="badge">${data.source}</span></td>
+            <td><strong>${data.image}</strong></td>
+            <td>${data.image_xy}</td>
+            <td>${data.ref}</td>
+            <td>${data.ref_xy}</td>
+            <td>${data.txt}</td>
+            <td>${data.txt_xy}</td>
+        `;
+        tableBody.appendChild(row);
+    }
+
+    // Download formatted data as CSV
+    function downloadCSV() {
+        if (extractedData.length === 0) return;
+
+        const headers = ["Source", "IMAGEN", "X_Y_Image", "REF", "X_Y_REF", "TXT", "X_Y_TXT"];
+        const csvRows = [
+            headers.join(','),
+            ...extractedData.map(row => 
+                `"${row.source}","${row.image}","${row.image_xy}","${row.ref}","${row.ref_xy}","${row.txt}","${row.txt_xy}"`
+            )
+        ].join('\n');
+
+        const blob = new Blob([csvRows], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', 'Extracted_OCR_Geolocation.csv');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
 </script>
 
 </body>
