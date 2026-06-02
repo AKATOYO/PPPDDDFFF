@@ -129,7 +129,8 @@
         extractedData = [];
         tableBody.innerHTML = '';
         
-        const { value: progress } = await Swal.fire({
+        // FIX: Fire the loading alert without awaiting it, so the UI updates while processing runs
+        Swal.fire({
             title: 'Processing Document',
             html: 'Initializing OCR Engine...<br><small>This may take a moment depending on the file size.</small>',
             allowOutsideClick: false,
@@ -143,15 +144,19 @@
                 if (file.type === 'application/pdf') {
                     await processPDF(file);
                 } else {
-                    await processImage(file, "Img-1");
+                    // FIX: Correctly number multiple image files
+                    await processImage(file, `Img-${i + 1}`);
                 }
             }
 
             resultTable.style.display = 'table';
             downloadBtn.style.display = 'inline-block';
+            // FIX: Manually close the loading alert when done
+            Swal.close();
             Swal.fire('Success!', 'Data extracted and formatted successfully.', 'success');
         } catch (error) {
             console.error(error);
+            Swal.close(); // Ensure loading is closed on error
             Swal.fire('Error', 'Something went wrong during processing.', 'error');
         }
     });
@@ -188,13 +193,16 @@
 
     // Process Image with Tesseract OCR
     async function processImage(source, sourceName) {
-        const isUrl = typeof source === 'string' && source.startsWith('data:');
+        // FIX: Tesseract.js v5 API requires creating worker, loading language, and initializing separately
+        const worker = await Tesseract.createWorker();
+        await worker.loadLanguage('eng+spa'); // Load English and Spanish
+        await worker.initialize('eng+spa');   // Initialize with both languages
         
-        const worker = await Tesseract.createWorker('eng+spa'); // Add languages as needed e.g., eng+spa
-        const { data } = await worker.recognize(isUrl ? source : source);
+        // FIX: Tesseract handles File objects and Data URLs automatically. No need for isUrl check.
+        const { data } = await worker.recognize(source);
         await worker.terminate();
 
-        if (data && data.words) {
+        if (data && data.words && data.words.length > 0) {
             parseAndFormatData(data.words, sourceName);
         }
     }
